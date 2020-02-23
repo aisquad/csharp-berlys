@@ -20,7 +20,7 @@ namespace capp1
         internal string name;
         internal DateTime deliveryDate;
         internal int deliveries;
-        internal SortedDictionary<int, Customer> customers;
+        internal Dictionary<int, Customer> customers;
         internal float volumeAmt;
         internal float weightAmt;
         internal float truckCapacity;
@@ -64,8 +64,31 @@ namespace capp1
         }
     }
 
-    class Convert
+    public sealed class Convert
     {
+        private static Convert instance = null;
+        private static readonly object Instancelock = new object();
+
+        private Convert() { }
+
+        public static Convert GetInstance
+        {
+            get
+            {
+                if (instance == null)
+                {
+                    lock (Instancelock)
+                    {
+                        if (instance == null)
+                        {
+                            instance = new Convert();
+                        }
+                    }
+                }
+                return instance;
+            }
+        }
+
         public int ToInt(Group group)
         {
             return int.Parse(group.Value);
@@ -97,13 +120,12 @@ namespace capp1
                 + @"(?:CAPACIDAD TOTAL CAMIÓN\s+:\s+(?<truckCap>[\d,.]+) (?<um3>(?:PVL|KG)))?";
         private List<int> knownRouteIDs = new List<int> { 678, 679, 680, 681, 682, 686, 688, 696 };
 
-        private SortedDictionary<int, Customer> FetchCustomers(string content)
+        private Dictionary<int, Customer> FetchCustomers(string content)
         {
-            SortedDictionary<int, Customer> customers = new SortedDictionary<int, Customer> { };
+            Dictionary<int, Customer> customers = new Dictionary<int, Customer> { };
             Regex regexp = new Regex(@"(?<custID>\d{10}) (?<custName>.{35}) (?<town>.{20}) (?<ordNum>\d{10}) (?<vol>[\d,.\s]{11})(?: PVL)?");
             MatchCollection matches = regexp.Matches(content);
-            var i = 0;
-            Convert convert = new Convert();
+            Convert convert = Convert.GetInstance;
             foreach (Match match in matches)
             {
                 GroupCollection group = match.Groups;
@@ -132,19 +154,19 @@ namespace capp1
             return customers;
         }
 
-        public SortedDictionary<int, Route> FetchRoutes(string content)
+        private Dictionary<int, Route> FetchRoutes(string content)
         {
-            SortedDictionary<int, Route> routes = new SortedDictionary<int, Route> { };
+            Dictionary<int, Route> routes = new Dictionary<int, Route> { };
             Regex regexp = new Regex(Pattern, RegexOptions.Singleline);
             MatchCollection matches = regexp.Matches(content);
-            Convert convert = new Convert();
+            Convert convert = Convert.GetInstance;
             foreach (Match match in matches)
             {
                 GroupCollection group = match.Groups;
                 int routeID = convert.ToInt(group["routeID"]);
                 if (!knownRouteIDs.Contains(routeID)) continue;
                 
-                SortedDictionary<int, Customer> customers = new SortedDictionary<int, Customer> { };
+                Dictionary<int, Customer> customers = new Dictionary<int, Customer> { };
                 customers = FetchCustomers(group["customers"].Value);
 
                 float truckCap = group["truckCap"].Value == "" ? 0.0f : convert.ToFloat(group["truckCap"]);
@@ -163,26 +185,22 @@ namespace capp1
             }
             return routes;
         }
-    }
-    class Program
-    {
-        static void Main(string[] args)
+
+        public void run()
         {
             FilenameHandler f = new FilenameHandler { Filename = "2020-02-20.txt" };
             f.AppendToDataDirPath(@"2020\02\");
             System.Console.WriteLine(f.ToDataDir());
 
-
             string[] lines = System.IO.File.ReadAllLines(f.ToDataDir());
             System.Console.WriteLine("This file has {0} lines", lines.Length);
-            string content = System.IO.File.ReadAllText(f.ToDataDir());
-            Berlys berlys = new Berlys();
-            SortedDictionary<int, Route> routes = berlys.FetchRoutes(content);
 
+            string content = System.IO.File.ReadAllText(f.ToDataDir());
+            Dictionary<int, Route> routes = FetchRoutes(content);
             foreach (int routeID in routes.Keys)
             {
                 Route route = routes[routeID];
-                System.Console.WriteLine("Route: {0} DeliveryDate: {1} Customers: {2}\n", route.id, String.Format("{0:dd.mm.yyyy}", route.deliveryDate), route.deliveries);
+                System.Console.WriteLine("Route: {0} {1} DeliveryDate: {2} Customers: {3}\n", route.id, route.name, String.Format("{0:dd.mm.yyyy}", route.deliveryDate), route.deliveries);
                 var i = 0;
                 foreach(int custID in route.customers.Keys)
                 {
@@ -192,8 +210,15 @@ namespace capp1
                 System.Console.WriteLine("\n");
             }
 
-            System.Console.WriteLine(float.Parse("0,002"));
-            System.Console.WriteLine(float.Parse("0.002", CultureInfo.InvariantCulture.NumberFormat));
+        }
+    }
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Berlys berlys = new Berlys();
+            berlys.run();
+
             // Suspend the screen.  
             System.Console.ReadLine();
         }
