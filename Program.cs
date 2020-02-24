@@ -1,7 +1,10 @@
-﻿using System;
-using System.IO;
+﻿using ImapX;
+using ImapX.Collections;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 
 namespace capp1
 {
@@ -18,12 +21,115 @@ namespace capp1
     {
         internal int id;
         internal string name;
-        internal DateTime deliveryDate;
+        internal System.DateTime deliveryDate;
         internal int deliveries;
         internal Dictionary<int, Customer> customers;
         internal float volumeAmt;
         internal float weightAmt;
         internal float truckCapacity;
+    }
+
+    class Config
+    {
+        public string email { get; set; }
+        public string password { get; set; }
+        public string server { get; set; }
+    }
+
+    class ConfigRetriever
+    {
+        private Config config;
+        public string userPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        public ConfigRetriever()
+        {
+            StreamReader jsonStream = File.OpenText($@"{userPath}\OneDrive\Scripts\resources\c#-berlys-config.json");
+            var json = jsonStream.ReadToEnd();
+            config = JsonConvert.DeserializeObject<Config>(json);
+        }
+
+        public Config Get()
+        {
+            return config;
+        }
+
+    }
+
+    class GetMail
+    {
+        private string server;
+        private string address;
+        private string password;
+        private string attachmentsDirPath;
+        private Config config;
+
+        private ImapClient client;
+
+        public GetMail()
+        {
+            ConfigRetriever configRetriever = new ConfigRetriever();
+            config = configRetriever.Get();
+            server = config.server;
+            address = config.email;
+            password = config.password;
+            attachmentsDirPath = $@"{configRetriever.userPath}\OneDrive\Scripts\data\berlys\attachments\";
+        }
+
+        private bool Connect()
+        {
+            client = new ImapClient(server, 993, true);
+            return client.Connect() && client.Login(address, password);
+        }
+
+        private MessageCollection FromFolder(string folder)
+        {
+             return client.Folders[folder].Messages;
+        }
+
+        private void DownloadAttachements(MessageCollection messages, string since="07-FEB-2020", string before="19-FEB-2020")
+        {
+            messages.Download($"SENTSINCE {since}");
+            Queue<Attachment> loadFilesQueue = new Queue<Attachment>();
+            Queue<Attachment> sheetFilesQueue = new Queue<Attachment>();
+
+            foreach (Message message in messages)
+            {
+                Console.WriteLine($"MESSAGE FROM: {message.From.Address.ToString()} {message.Date:yyyy-MM-dd}");
+                Console.WriteLine($"ATT LENGTH: {message.Attachments.Length} RSC LENGTH: {message.EmbeddedResources.Length}");
+
+                var attachements = (message.Attachments.Length > 0) ? message.Attachments : message.EmbeddedResources;
+                foreach (var file in attachements)
+                {
+                    file.Download();
+                    if (file.FileName.ToString().StartsWith("Volumen"))
+                        loadFilesQueue.Enqueue(file);
+                    else
+                        sheetFilesQueue.Enqueue(file);
+                }
+                Console.WriteLine();
+            }
+            Console.WriteLine($"files: {loadFilesQueue.Count} sheets: {sheetFilesQueue.Count}");
+            Attachment att = loadFilesQueue.Dequeue();
+            att.Save(attachmentsDirPath);
+            att = sheetFilesQueue.Dequeue();
+            att.Save(attachmentsDirPath);
+        }
+
+        private void Logout()
+        {
+            client.Logout();
+            client.Disconnect();
+            Console.WriteLine("Disconnected");
+        }
+        public void Run()
+        {
+            if (Connect())
+            {
+                Console.WriteLine("Logged in!");
+                DownloadAttachements(FromFolder("Berlys"));
+                Logout();
+            }
+        }
     }
 
     class FilenameHandler
@@ -32,10 +138,11 @@ namespace capp1
 
         public FilenameHandler()
         {
-            TemporaryDirPath = @"C:\Users\coetg\AppData\Local\Temp\";
-            DownloadsDirPath = @"C:\Users\coetg\Downloads\";
-            DataDirPath = @"C:\Users\coetg\OneDrive\Scripts\data\berlys\";
-            AttachmentsDirPath = @"C:\Users\coetg\OneDrive\Scripts\berlys\data\attachments\";
+            string userPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            TemporaryDirPath = $@"{userPath}\AppData\Local\Temp\";
+            DownloadsDirPath = $@"{userPath}\Downloads\";
+            DataDirPath = $@"{userPath}\OneDrive\Scripts\data\berlys\";
+            AttachmentsDirPath = $@"{userPath}\OneDrive\Scripts\berlys\data\attachments\";
         }
 
         public string TemporaryDirPath { get; private set; }
@@ -191,7 +298,7 @@ namespace capp1
                 GroupCollection group = match.Groups;
                 int routeID = convert.ToInt(group["routeID"]);
                 if (!knownRouteIDs.Contains(routeID)) continue;
-                
+
                 Dictionary<int, Customer> customers = new Dictionary<int, Customer> { };
                 customers = FetchCustomers(group["customers"].Value);
 
@@ -222,7 +329,7 @@ namespace capp1
             string filename = filenameHandler.FromDownloadsDir();
             Boolean saveFile = false;
 
-            if (File.Exists(filename)) {saveFile = true;} else {filename = filenameHandler.FromDataDir();}
+            if (File.Exists(filename)) { saveFile = true; } else { filename = filenameHandler.FromDataDir(); }
             Console.WriteLine(filename);
 
             string[] lines = File.ReadAllLines(filename);
@@ -237,7 +344,7 @@ namespace capp1
                     $"Route: {route.id} {route.name} DeliveryDate: {route.deliveryDate:dd.mm.yyyy} Customers: {route.deliveries}\n"
                 );
                 var i = 0;
-                foreach(int custID in route.customers.Keys)
+                foreach (int custID in route.customers.Keys)
                 {
                     Customer customer = route.customers[custID];
                     Console.WriteLine($"{++i}\t{customer.name}\t{customer.volume}\t{customer.town}");
@@ -254,12 +361,20 @@ namespace capp1
             }
 
         }
+
+        public void DownloadAttachments()
+        {
+            GetMail gmail = new GetMail();
+            gmail.Run();
+        }
     }
+
     class Program
     {
         static void Main(string[] args)
         {
             Berlys berlys = new Berlys();
+            berlys.DownloadAttachments();
             berlys.Run();
 
             // Suspend the screen.  
