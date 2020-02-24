@@ -1,6 +1,6 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace capp1
@@ -32,13 +32,19 @@ namespace capp1
 
         public FilenameHandler()
         {
+            TemporaryDirPath = @"C:\Users\coetg\AppData\Local\Temp\";
+            DownloadsDirPath = @"C:\Users\coetg\Downloads\";
             DataDirPath = @"C:\Users\coetg\OneDrive\Scripts\data\berlys\";
-            AttachmentsDirPath = @"C:\Users\coetg\OneDrive\Scripts\data\attachments\";
+            AttachmentsDirPath = @"C:\Users\coetg\OneDrive\Scripts\berlys\data\attachments\";
         }
+
+        public string TemporaryDirPath { get; private set; }
+
+        public string DownloadsDirPath { get; private set; }
 
         public string DataDirPath { get; private set; }
 
-        public string AttachmentsDirPath { get; }
+        public string AttachmentsDirPath { get; private set; }
 
         public string Filename { get; set; }
 
@@ -47,7 +53,25 @@ namespace capp1
         public void AppendToDataDirPath(string path)
         {
             DataDirPath += path;
-            AbsoluteFilename = DataDirPath + Filename;
+            _path = DataDirPath;
+            AbsoluteFilename = _path + Filename;
+        }
+
+        public string FromDownloadsDir()
+        {
+            _path = DownloadsDirPath;
+            Filename = "Volumen Rutas.txt";
+            AbsoluteFilename = _path + Filename;
+            return AbsoluteFilename;
+        }
+
+        public string FromDataDir()
+        {
+            string[] files = Directory.GetFiles(DataDirPath, "*.txt", SearchOption.AllDirectories);
+            AbsoluteFilename = files[files.Length - 1];
+            _path = Path.GetDirectoryName(AbsoluteFilename);
+            Filename = Path.GetFileName(AbsoluteFilename);
+            return AbsoluteFilename;
         }
         public string ToDataDir()
         {
@@ -56,7 +80,7 @@ namespace capp1
             return AbsoluteFilename;
         }
 
-        public string ToAttachementsDir()
+        public string ToAttachmentsDir()
         {
             _path = AttachmentsDirPath;
             AbsoluteFilename = _path + Filename;
@@ -120,6 +144,8 @@ namespace capp1
                 + @"(?:CAPACIDAD TOTAL CAMIÓN\s+:\s+(?<truckCap>[\d,.]+) (?<um3>(?:PVL|KG)))?";
         private List<int> knownRouteIDs = new List<int> { 678, 679, 680, 681, 682, 686, 688, 696 };
 
+        public DateTime? docDate = null;
+
         private Dictionary<int, Customer> FetchCustomers(string content)
         {
             Dictionary<int, Customer> customers = new Dictionary<int, Customer> { };
@@ -181,6 +207,10 @@ namespace capp1
                     weightAmt = convert.ToFloat(group["weightAmt"]),
                     truckCapacity = truckCap
                 };
+                if (docDate == null)
+                {
+                    docDate = route.deliveryDate;
+                }
                 routes.Add(routeID, route);
             }
             return routes;
@@ -188,26 +218,46 @@ namespace capp1
 
         public void run()
         {
-            FilenameHandler f = new FilenameHandler { Filename = "2020-02-20.txt" };
-            f.AppendToDataDirPath(@"2020\02\");
-            System.Console.WriteLine(f.ToDataDir());
+            FilenameHandler filenameHandler = new FilenameHandler();
+            string filename = filenameHandler.FromDownloadsDir();
+            Boolean saveFile = false;
 
-            string[] lines = System.IO.File.ReadAllLines(f.ToDataDir());
-            System.Console.WriteLine("This file has {0} lines", lines.Length);
+            if (File.Exists(filename))
+            {
+                saveFile = true;
+            }
+            else
+            {
+                filename = filenameHandler.FromDataDir();
+            }
+            Console.WriteLine(filename);
 
-            string content = System.IO.File.ReadAllText(f.ToDataDir());
+            string[] lines = File.ReadAllLines(filename);
+            Console.WriteLine("This file has {0} lines", lines.Length);
+
+            string content = File.ReadAllText(filename);
             Dictionary<int, Route> routes = FetchRoutes(content);
             foreach (int routeID in routes.Keys)
             {
                 Route route = routes[routeID];
-                System.Console.WriteLine("Route: {0} {1} DeliveryDate: {2} Customers: {3}\n", route.id, route.name, String.Format("{0:dd.mm.yyyy}", route.deliveryDate), route.deliveries);
+                Console.WriteLine(
+                    "Route: {0} {1} DeliveryDate: {2} Customers: {3}\n", route.id, route.name,
+                    String.Format("{0:dd.mm.yyyy}", route.deliveryDate), route.deliveries);
                 var i = 0;
                 foreach(int custID in route.customers.Keys)
                 {
                     Customer customer = route.customers[custID];
-                    System.Console.WriteLine("{0}\t{1}\t{2}\t{3}", ++i, customer.name, customer.volume, customer.town);
+                    Console.WriteLine("{0}\t{1}\t{2}\t{3}", ++i, customer.name, customer.volume, customer.town);
                 }
-                System.Console.WriteLine("\n");
+                Console.WriteLine("\n");
+            }
+            if (saveFile)
+            {
+                string oldFilename = filenameHandler.FromDownloadsDir();
+                filenameHandler.Filename = String.Format("{0:yyyy-mm-dd}.txt", docDate);
+                filenameHandler.AppendToDataDirPath(String.Format("{0:yyyy}\\{0:mm}\\", docDate));
+                string newFilename = filenameHandler.ToDataDir();
+                File.Move(oldFilename, newFilename, true);
             }
 
         }
