@@ -68,7 +68,7 @@ namespace capp1
         public string FromDataDir()
         {
             string[] files = Directory.GetFiles(DataDirPath, "*.txt", SearchOption.AllDirectories);
-            AbsoluteFilename = files[files.Length - 1];
+            AbsoluteFilename = files[^1];
             _path = Path.GetDirectoryName(AbsoluteFilename);
             Filename = Path.GetFileName(AbsoluteFilename);
             return AbsoluteFilename;
@@ -216,24 +216,17 @@ namespace capp1
             return routes;
         }
 
-        public void run()
+        public void Run()
         {
             FilenameHandler filenameHandler = new FilenameHandler();
             string filename = filenameHandler.FromDownloadsDir();
             Boolean saveFile = false;
 
-            if (File.Exists(filename))
-            {
-                saveFile = true;
-            }
-            else
-            {
-                filename = filenameHandler.FromDataDir();
-            }
+            if (File.Exists(filename)) {saveFile = true;} else {filename = filenameHandler.FromDataDir();}
             Console.WriteLine(filename);
 
             string[] lines = File.ReadAllLines(filename);
-            Console.WriteLine("This file has {0} lines", lines.Length);
+            Console.WriteLine($"This file contains {lines.Length} lines");
 
             string content = File.ReadAllText(filename);
             Dictionary<int, Route> routes = FetchRoutes(content);
@@ -241,21 +234,21 @@ namespace capp1
             {
                 Route route = routes[routeID];
                 Console.WriteLine(
-                    "Route: {0} {1} DeliveryDate: {2} Customers: {3}\n", route.id, route.name,
-                    String.Format("{0:dd.mm.yyyy}", route.deliveryDate), route.deliveries);
+                    $"Route: {route.id} {route.name} DeliveryDate: {route.deliveryDate:dd.mm.yyyy} Customers: {route.deliveries}\n"
+                );
                 var i = 0;
                 foreach(int custID in route.customers.Keys)
                 {
                     Customer customer = route.customers[custID];
-                    Console.WriteLine("{0}\t{1}\t{2}\t{3}", ++i, customer.name, customer.volume, customer.town);
+                    Console.WriteLine($"{++i}\t{customer.name}\t{customer.volume}\t{customer.town}");
                 }
                 Console.WriteLine("\n");
             }
             if (saveFile)
             {
                 string oldFilename = filenameHandler.FromDownloadsDir();
-                filenameHandler.Filename = String.Format("{0:yyyy-mm-dd}.txt", docDate);
-                filenameHandler.AppendToDataDirPath(String.Format("{0:yyyy}\\{0:mm}\\", docDate));
+                filenameHandler.Filename = $"{docDate:yyyy-mm-dd}.txt";
+                filenameHandler.AppendToDataDirPath($@"{docDate:yyyy}\{docDate:mm}\");
                 string newFilename = filenameHandler.ToDataDir();
                 File.Move(oldFilename, newFilename, true);
             }
@@ -267,7 +260,7 @@ namespace capp1
         static void Main(string[] args)
         {
             Berlys berlys = new Berlys();
-            berlys.run();
+            berlys.Run();
 
             // Suspend the screen.  
             System.Console.ReadLine();
